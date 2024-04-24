@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import boto3
 from botocore.exceptions import ClientError
 import requests
@@ -7,68 +9,109 @@ import json
 url = "https://sqs.us-east-1.amazonaws.com/440848399208/mgv8dh"
 sqs = boto3.client('sqs')
 
-def delete_message(handle):
-    try:
-        # Delete message from SQS queue
-        sqs.delete_message(
-            QueueUrl=url,
-            ReceiptHandle=handle
-        )
-        print("Message deleted")
-    except ClientError as e:
-        print(e.response['Error']['Message'])
-
-
+def delete_message(handles):
+    for handle in handles:
+        try:
+            # Delete message from SQS queue
+            sqs.delete_message(
+                QueueUrl=url,
+                ReceiptHandle=handle
+            )
+            print("Message deleted")
+        except ClientError as e:
+            print(e.response['Error']['Message'])
 
 
 def get_message():
-    count = 0;
-    with open('message.txt', 'w') as file:
-        while True:
-            try:
-                response = sqs.receive_message(
-                    QueueUrl=url,
-                    AttributeNames=[
-                        'All'
-                    ],
-                    MaxNumberOfMessages=1,
-                    MessageAttributeNames=[
-                        'All'
-                    ],
-                    VisibilityTimeout = 300
-                )
-                if "Messages" in response:
-                    for msg in response['Messages']:
-                        order = msg['MessageAttributes']['order']['StringValue']
-                        word = msg['MessageAttributes']['word']['StringValue']
-                        handle = msg['ReceiptHandle']
-                        file.write(f"{order},{word},{handle}\n")
-                        count += 1
-                        if count >= 10:
-                            file.close()
-                            return
-                else:
-                    print("No more messages in the queue.")
-                    file.close()
-                    break
-            except ClientError as e:
-                print(e.response['Error']['Message'])
-                break
+    messages = []
+    handles = []
+    try:
+        # Receive message from SQS queue. Each message has two MessageAttributes: order and word
+        # You want to extract these two attributes to reassemble the message
+        while (len(messages) < 10):
+            response = sqs.receive_message(
+                QueueUrl=url,
+                AttributeNames=[
+                    'All'
+                ],
+                MaxNumberOfMessages=1,
+                MessageAttributeNames=[
+                    'All'
+                ]
+            )
+            # Check if there is a message in the queue or not
+            if "Messages" in response:
+                # extract the two message attributes you want to use as variables
+                # extract the handle for deletion later
+                order = response['Messages'][0]['MessageAttributes']['order']['StringValue']
+                word = response['Messages'][0]['MessageAttributes']['word']['StringValue']
+                handle = response['Messages'][0]['ReceiptHandle']
 
+                messages.append((order, word))
+                handles.append(handle)
+
+                # Print the message attributes - this is what you want to work with to reassemble the message
+                print(f"Order: {order}, Word: {word}")
+
+        # If there is no message in the queue, print a message and exit    
+            else:
+                print("No message in the queue")
+                exit(1)
+            
+    # Handle any errors that may occur connecting to SQS
+    except ClientError as e:
+        print(e.response['Error']['Message'])
+        
+    return messages, handles
+
+    # count = 0
+    # with open('message.txt', 'w') as file:
+    #     while True:
+    #         try:
+    #             response = sqs.receive_message(
+    #                 QueueUrl=url,
+    #                 AttributeNames=[
+    #                     'All'
+    #                 ],
+    #                 MaxNumberOfMessages=1,
+    #                 MessageAttributeNames=[
+    #                     'All'
+    #                 ],
+    #                 VisibilityTimeout = 300
+    #             )
+    #             if "Messages" in response:
+    #                 for msg in response['Messages']:
+    #                     order = msg['MessageAttributes']['order']['StringValue']
+    #                     word = msg['MessageAttributes']['word']['StringValue']
+    #                     handle = msg['ReceiptHandle']
+    #                     file.write(f"{order},{word},{handle}\n")
+    #                     count += 1
+    #                     if count >= 10:
+    #                         file.close()
+    #                         return
+    #             else:
+    #                 print("No more messages in the queue.")
+    #                 file.close()
+    #                 break
+    #         except ClientError as e:
+    #             print(e.response['Error']['Message'])
+    #             break
+    
 def reassemble_phrase():
-    message = []
-    with open('message.txt', 'r') as file:
-        for eachline in file:
-            order, word, handle = eachline.strip().split(',')
-            message.append({"order": int(order), "word": word, "handle": handle})
-    file.close()
-    message.sort(key=lambda x: x['order'])
-    reassembled_phrase = ' '.join([each['word'] for each in message])
+    messages, handles = get_message()
+    # with open('message.txt', 'r') as file:
+    #     for eachline in file:
+    #         order, word, handle = eachline.strip().split(',')
+    #         message.append({"order": int(order), "word": word, "handle": handle})
+    # file.close()
+    # messages.sort(key=lambda x: x['order'])
+    # reassembled_phrase = ' '.join([each['word'] for each in messages])
+    messages.sort()
+    reassembled_phrase = ' '.join(word for _, word in messages)
+    # delete_message(handles) // Comment out to delete all messages 
     return reassembled_phrase
-
 
 # Trigger the function
 if __name__ == "__main__":
-    get_message()
     reassembled_phrase = reassemble_phrase()
     print(reassembled_phrase)
