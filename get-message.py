@@ -63,7 +63,6 @@ def get_message():
         print(e.response['Error']['Message'])
         
     return messages, handles
-
     # count = 0
     # with open('message.txt', 'w') as file:
     #     while True:
